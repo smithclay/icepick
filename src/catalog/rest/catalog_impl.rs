@@ -468,3 +468,46 @@ fn commit_table_enabled() -> bool {
         Err(_) => false,
     }
 }
+
+impl IcebergRestCatalog {
+    /// Expire snapshots by their IDs using the REST catalog API
+    pub(super) async fn expire_snapshots_impl(
+        &self,
+        identifier: &crate::spec::TableIdent,
+        snapshot_ids: &[i64],
+    ) -> crate::error::Result<()> {
+        if snapshot_ids.is_empty() {
+            return Ok(());
+        }
+
+        // Load current table to get requirements
+        let table = self.load_table_impl(identifier).await?;
+        let metadata = table.metadata();
+        let current_snapshot_id = metadata.current_snapshot_id();
+        let reference = self.options.reference().to_string();
+
+        // Build commit request with RemoveSnapshots update
+        let requirements = vec![
+            TableRequirement::AssertTableUuid {
+                uuid: metadata.table_uuid().to_string(),
+            },
+            TableRequirement::AssertRefSnapshotId {
+                r#ref: reference,
+                snapshot_id: current_snapshot_id,
+            },
+        ];
+
+        let request = CommitTableRequest {
+            requirements,
+            updates: vec![TableUpdate::RemoveSnapshots {
+                snapshot_ids: snapshot_ids.to_vec(),
+            }],
+        };
+
+        self.commit_table(identifier, request)
+            .await
+            .map_err(helpers::from_catalog_error)?;
+
+        Ok(())
+    }
+}

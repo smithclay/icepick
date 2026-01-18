@@ -289,6 +289,10 @@ impl Catalog for RestCatalog {
             .update_table_metadata(identifier, old_metadata_location, new_metadata_location)
             .await
     }
+
+    async fn expire_snapshots(&self, identifier: &TableIdent, snapshot_ids: &[i64]) -> Result<()> {
+        self.inner.expire_snapshots(identifier, snapshot_ids).await
+    }
 }
 
 // Implement Catalog trait for WASM targets without Send requirement.
@@ -344,6 +348,10 @@ impl Catalog for RestCatalog {
         self.inner
             .update_table_metadata(identifier, old_metadata_location, new_metadata_location)
             .await
+    }
+
+    async fn expire_snapshots(&self, identifier: &TableIdent, snapshot_ids: &[i64]) -> Result<()> {
+        self.inner.expire_snapshots(identifier, snapshot_ids).await
     }
 }
 

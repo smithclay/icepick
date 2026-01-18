@@ -72,4 +72,12 @@ impl crate::catalog::Catalog for IcebergRestCatalog {
         self.update_table_metadata_impl(identifier, old_metadata_location, new_metadata_location)
             .await
     }
+
+    async fn expire_snapshots(
+        &self,
+        identifier: &crate::spec::TableIdent,
+        snapshot_ids: &[i64],
+    ) -> crate::error::Result<()> {
+        self.expire_snapshots_impl(identifier, snapshot_ids).await
+    }
 }

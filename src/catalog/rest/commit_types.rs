@@ -75,6 +75,13 @@ pub enum TableUpdate {
         max_ref_age_ms: Option<i64>,
     },
 
+    /// Remove snapshots by their IDs
+    #[serde(rename = "remove-snapshots")]
+    RemoveSnapshots {
+        #[serde(rename = "snapshot-ids")]
+        snapshot_ids: Vec<i64>,
+    },
+
     #[serde(rename = "upgrade-format-version")]
     UpgradeFormatVersion {
         #[serde(rename = "format-version")]

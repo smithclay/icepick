@@ -59,6 +59,7 @@ pub mod io;
 pub mod manifest;
 pub mod reader;
 pub mod scan;
+pub mod snapshot_cleanup;
 pub mod spec;
 pub mod table;
 pub mod transaction;
@@ -100,3 +101,9 @@ pub use compact::{
 
 // Re-export expression types
 pub use expr::{parse_filter, ColumnRef, ComparisonOp, Datum, Predicate};
+
+// Re-export snapshot cleanup types
+pub use snapshot_cleanup::{
+    execute_snapshot_cleanup, plan_snapshot_cleanup, CleanupOptions, CleanupPlan, CleanupResult,
+    RetainedSnapshot, RetentionReason, SnapshotInfo,
+};

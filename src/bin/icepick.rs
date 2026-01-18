@@ -2,7 +2,8 @@
 
 use clap::{Parser, Subcommand};
 use icepick::cli::commands::{
-    catalog as catalog_cmd, compact as compact_cmd, namespace as namespace_cmd, table as table_cmd,
+    catalog as catalog_cmd, compact as compact_cmd, namespace as namespace_cmd,
+    snapshot as snapshot_cmd, table as table_cmd,
 };
 use icepick::cli::{CatalogConfig, OutputFormat};
 
@@ -41,6 +42,10 @@ enum Commands {
     #[command(subcommand)]
     Table(table_cmd::TableCommand),
 
+    /// Snapshot operations (list, cleanup)
+    #[command(subcommand)]
+    Snapshot(snapshot_cmd::SnapshotCommand),
+
     /// Compact a table
     Compact(compact_cmd::CompactArgs),
 }
@@ -66,6 +71,7 @@ async fn main() {
         Commands::Catalog(cmd) => catalog_cmd::execute(cmd, &config, cli.output).await,
         Commands::Namespace(cmd) => namespace_cmd::execute(cmd, &config, cli.output).await,
         Commands::Table(cmd) => table_cmd::execute(cmd, &config, cli.output).await,
+        Commands::Snapshot(cmd) => snapshot_cmd::execute(cmd, &config, cli.output).await,
         Commands::Compact(args) => compact_cmd::execute(args, &config, cli.output).await,
     };
 

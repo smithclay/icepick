@@ -86,4 +86,29 @@ pub trait Catalog: Send + Sync {
             "Schema evolution not supported for this catalog implementation",
         ))
     }
+
+    /// Expire (remove) snapshots from a table by their IDs
+    ///
+    /// This method removes the specified snapshots from the table metadata,
+    /// allowing their associated data files to be garbage collected.
+    ///
+    /// # Arguments
+    /// * `identifier` - The table identifier
+    /// * `snapshot_ids` - List of snapshot IDs to expire
+    ///
+    /// # Returns
+    /// Ok(()) if successful, error otherwise
+    ///
+    /// # Notes
+    /// - The current snapshot cannot be expired
+    /// - Snapshots referenced by branches or tags should not be expired
+    async fn expire_snapshots(
+        &self,
+        _identifier: &TableIdent,
+        _snapshot_ids: &[i64],
+    ) -> Result<()> {
+        Err(crate::error::Error::invalid_input(
+            "Snapshot expiration not supported for this catalog implementation",
+        ))
+    }
 }
