@@ -175,12 +175,7 @@ impl Outputable for CleanupPlanOutput {
 
         if !self.snapshots_to_retain.is_empty() {
             let mut retain_table = ComfyTable::new();
-            retain_table.set_header(Row::from(vec![
-                "Snapshot ID",
-                "Timestamp",
-                "Age",
-                "Reason",
-            ]));
+            retain_table.set_header(Row::from(vec!["Snapshot ID", "Timestamp", "Age", "Reason"]));
 
             for snapshot in &self.snapshots_to_retain {
                 let age_str = if snapshot.age_days < 1.0 {

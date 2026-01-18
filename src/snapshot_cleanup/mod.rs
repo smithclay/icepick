@@ -42,7 +42,7 @@
 
 use crate::catalog::Catalog;
 use crate::error::{Error, Result};
-use crate::spec::{Snapshot, TableMetadata};
+use crate::spec::Snapshot;
 use crate::table::Table;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -258,7 +258,10 @@ pub fn plan_snapshot_cleanup(table: &Table, options: &CleanupOptions) -> Result<
             SnapshotInfo::from_snapshot(
                 s,
                 current_snapshot_id,
-                snapshot_refs.get(&s.snapshot_id()).cloned().unwrap_or_default(),
+                snapshot_refs
+                    .get(&s.snapshot_id())
+                    .cloned()
+                    .unwrap_or_default(),
                 now_ms,
             )
         })
@@ -310,7 +313,7 @@ pub fn plan_snapshot_cleanup(table: &Table, options: &CleanupOptions) -> Result<
 /// Execute the snapshot cleanup plan
 ///
 /// This removes the specified snapshots from the table metadata and commits
-/// the changes to the catalog.
+/// the changes to the catalog using the REST API's remove-snapshots update.
 pub async fn execute_snapshot_cleanup<C: Catalog>(
     table: &Table,
     catalog: &C,
@@ -331,7 +334,7 @@ pub async fn execute_snapshot_cleanup<C: Catalog>(
         .map(|s| s.snapshot_id)
         .collect();
 
-    // Get manifest lists that will become orphaned
+    // Get manifest lists that will become orphaned (for garbage collection info)
     let orphaned_manifest_lists: Vec<String> = table
         .metadata()
         .snapshots()
@@ -340,73 +343,13 @@ pub async fn execute_snapshot_cleanup<C: Catalog>(
         .map(|s| s.manifest_list().to_string())
         .collect();
 
-    // Build new metadata without the expired snapshots
-    let old_metadata = table.metadata();
-    let new_snapshots: Vec<Snapshot> = old_metadata
-        .snapshots()
-        .iter()
-        .filter(|s| !snapshot_ids_to_remove.contains(&s.snapshot_id()))
-        .cloned()
-        .collect();
-
-    // Filter snapshot log as well
-    let new_snapshot_log: Vec<crate::spec::SnapshotLogEntry> = old_metadata
-        .snapshot_log()
-        .iter()
-        .filter(|entry| !snapshot_ids_to_remove.contains(&entry.snapshot_id()))
-        .cloned()
-        .collect();
-
-    // Build the updated metadata
-    let mut builder = TableMetadata::builder()
-        .with_format_version(old_metadata.format_version())
-        .with_table_uuid(old_metadata.table_uuid().to_string())
-        .with_location(old_metadata.location())
-        .with_last_updated_ms(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| Error::unexpected(format!("Failed to get current time: {}", e)))?
-                .as_millis() as i64,
-        )
-        .with_last_sequence_number(old_metadata.last_sequence_number())
-        .with_snapshot_log(new_snapshot_log)
-        .with_metadata_log(old_metadata.metadata_log().to_vec())
-        .with_partition_specs(old_metadata.partition_specs().to_vec())
-        .with_sort_orders(old_metadata.sort_orders().to_vec())
-        .with_refs(old_metadata.refs().clone())
-        .with_table_features(old_metadata.table_features().to_vec());
-
-    // Add all schemas
-    for schema in old_metadata.schemas() {
-        builder = builder.with_current_schema(schema.clone());
-    }
-
-    // Add all properties
-    for (key, value) in old_metadata.properties() {
-        builder = builder.with_property(key.clone(), value.clone());
-    }
-
-    // Add the retained snapshots
-    for snapshot in new_snapshots {
-        // We need to check if this is the current snapshot
-        if old_metadata.current_snapshot_id() == Some(snapshot.snapshot_id()) {
-            builder = builder.with_current_snapshot(snapshot);
-        } else {
-            // For non-current snapshots, we need a different approach
-            // The builder only has with_current_snapshot, so we need to
-            // handle this through the metadata directly after build
-        }
-    }
-
-    // This is a simplified version - in production you'd want to use
-    // the REST catalog's remove-snapshots update type directly
     let removed_ids: Vec<i64> = plan
         .snapshots_to_remove
         .iter()
         .map(|s| s.snapshot_id)
         .collect();
 
-    // Commit via catalog
+    // Commit via catalog's expire_snapshots which uses REST API's remove-snapshots
     catalog
         .expire_snapshots(table.identifier(), &removed_ids)
         .await?;
