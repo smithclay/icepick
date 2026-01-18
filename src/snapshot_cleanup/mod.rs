@@ -54,8 +54,6 @@ pub struct CleanupOptions {
     older_than_days: u32,
     /// Minimum number of snapshots to always retain (most recent)
     retain_last: usize,
-    /// Whether this is a dry run (no actual changes)
-    dry_run: bool,
 }
 
 impl Default for CleanupOptions {
@@ -63,7 +61,6 @@ impl Default for CleanupOptions {
         Self {
             older_than_days: 7,
             retain_last: 10,
-            dry_run: false,
         }
     }
 }
@@ -86,12 +83,6 @@ impl CleanupOptions {
         self
     }
 
-    /// Set whether this is a dry run
-    pub fn with_dry_run(mut self, dry_run: bool) -> Self {
-        self.dry_run = dry_run;
-        self
-    }
-
     /// Get the older than days threshold
     pub fn older_than_days(&self) -> u32 {
         self.older_than_days
@@ -100,11 +91,6 @@ impl CleanupOptions {
     /// Get the retain last count
     pub fn retain_last(&self) -> usize {
         self.retain_last
-    }
-
-    /// Check if this is a dry run
-    pub fn dry_run(&self) -> bool {
-        self.dry_run
     }
 }
 
@@ -115,8 +101,6 @@ pub struct SnapshotInfo {
     pub snapshot_id: i64,
     /// Timestamp when snapshot was created (milliseconds since epoch)
     pub timestamp_ms: i64,
-    /// Parent snapshot ID if any
-    pub parent_snapshot_id: Option<i64>,
     /// Age in days
     pub age_days: f64,
     /// Operation that created this snapshot
@@ -140,7 +124,6 @@ impl SnapshotInfo {
         Self {
             snapshot_id: snapshot.snapshot_id(),
             timestamp_ms: snapshot.timestamp_ms(),
-            parent_snapshot_id: snapshot.parent_snapshot_id(),
             age_days,
             operation: snapshot.summary().operation().to_string(),
             is_current: current_snapshot_id == Some(snapshot.snapshot_id()),
@@ -189,16 +172,6 @@ impl CleanupPlan {
     /// Check if the plan has any snapshots to remove
     pub fn is_empty(&self) -> bool {
         self.snapshots_to_remove.is_empty()
-    }
-
-    /// Get the number of snapshots that will be removed
-    pub fn removal_count(&self) -> usize {
-        self.snapshots_to_remove.len()
-    }
-
-    /// Get the number of snapshots that will be retained
-    pub fn retention_count(&self) -> usize {
-        self.snapshots_to_retain.len()
     }
 }
 
@@ -387,19 +360,16 @@ mod tests {
         let options = CleanupOptions::new();
         assert_eq!(options.older_than_days(), 7);
         assert_eq!(options.retain_last(), 10);
-        assert!(!options.dry_run());
     }
 
     #[test]
     fn test_cleanup_options_builder() {
         let options = CleanupOptions::new()
             .with_older_than_days(14)
-            .with_retain_last(5)
-            .with_dry_run(true);
+            .with_retain_last(5);
 
         assert_eq!(options.older_than_days(), 14);
         assert_eq!(options.retain_last(), 5);
-        assert!(options.dry_run());
     }
 
     #[test]

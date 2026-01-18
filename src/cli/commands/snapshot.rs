@@ -77,16 +77,10 @@ impl Outputable for SnapshotList {
         ]));
 
         for snapshot in &self.snapshots {
-            let age_str = if snapshot.age_days < 1.0 {
-                format!("{:.1}h", snapshot.age_days * 24.0)
-            } else {
-                format!("{:.1}d", snapshot.age_days)
-            };
-
             table.add_row(Row::from(vec![
                 snapshot.snapshot_id.to_string(),
                 snapshot.timestamp.clone(),
-                age_str,
+                format_age(snapshot.age_days),
                 snapshot.operation.clone(),
                 if snapshot.is_current { "yes" } else { "" }.to_string(),
                 snapshot.refs.join(", "),
@@ -178,16 +172,10 @@ impl Outputable for CleanupPlanOutput {
             retain_table.set_header(Row::from(vec!["Snapshot ID", "Timestamp", "Age", "Reason"]));
 
             for snapshot in &self.snapshots_to_retain {
-                let age_str = if snapshot.age_days < 1.0 {
-                    format!("{:.1}h", snapshot.age_days * 24.0)
-                } else {
-                    format!("{:.1}d", snapshot.age_days)
-                };
-
                 retain_table.add_row(Row::from(vec![
                     snapshot.snapshot_id.to_string(),
                     snapshot.timestamp.clone(),
-                    age_str,
+                    format_age(snapshot.age_days),
                     snapshot.reason.clone(),
                 ]));
             }
@@ -258,6 +246,14 @@ fn format_timestamp(timestamp_ms: i64) -> String {
         .single()
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
         .unwrap_or_else(|| "Invalid timestamp".to_string())
+}
+
+fn format_age(age_days: f64) -> String {
+    if age_days < 1.0 {
+        format!("{:.1}h", age_days * 24.0)
+    } else {
+        format!("{:.1}d", age_days)
+    }
 }
 
 fn format_retention_reason(reason: &RetentionReason) -> String {
@@ -387,8 +383,7 @@ pub async fn execute(
             // Build cleanup options
             let options = CleanupOptions::new()
                 .with_older_than_days(older_than_days)
-                .with_retain_last(retain_last)
-                .with_dry_run(dry_run);
+                .with_retain_last(retain_last);
 
             // Create cleanup plan
             let plan = plan_snapshot_cleanup(&table, &options)
