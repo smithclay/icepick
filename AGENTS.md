@@ -83,6 +83,11 @@ icepick table scan my_namespace.my_table --filter "date >= '2024-01-01'"
 # Compact small files (dry run first)
 icepick compact my_namespace.my_table --dry-run
 icepick compact my_namespace.my_table --target-size 268435456
+
+# Snapshot management
+icepick snapshot list my_namespace.my_table
+icepick snapshot cleanup my_namespace.my_table --dry-run
+icepick snapshot cleanup my_namespace.my_table --older-than-days 7 --retain-last 10
 ```
 
 ## CORE CONCEPTS
@@ -104,6 +109,7 @@ Module Structure:
 ├── cli/             # CLI commands (native only, behind "cli" feature)
 │   └── commands/    # catalog, namespace, table, compact subcommands
 ├── compact/         # Bin-pack compaction for small files
+├── snapshot_cleanup/ # Snapshot expiration and cleanup
 ├── expr/            # Predicate expressions for partition pruning
 ├── spec/            # Iceberg specification types (Schema, TableIdent, etc.)
 ├── table/           # Table representation and operations
@@ -132,6 +138,9 @@ Module Structure:
 12. **arrow_to_parquet()** - Write Arrow data directly to S3 without Iceberg metadata
 13. **register_data_files()** - Register existing Parquet files without rewriting data
 14. **introspect_parquet_file()** - Extract schema, row count, and metrics from Parquet footer
+15. **plan_snapshot_cleanup()** - Plan which snapshots to expire based on retention policy
+16. **execute_snapshot_cleanup()** - Execute a cleanup plan to remove expired snapshots
+17. **CleanupOptions** - Configure snapshot retention (older_than_days, retain_last)
 
 ## COMMON PATTERNS
 
@@ -326,6 +335,34 @@ let result = compact_table(&table, &catalog, &options).await?;
 println!("Compacted {} files into {}", result.files_removed, result.files_added);
 ```
 
+### Pattern 8: Snapshot cleanup
+
+```rust
+use icepick::snapshot_cleanup::{plan_snapshot_cleanup, execute_snapshot_cleanup, CleanupOptions};
+
+let table = catalog.load_table(&table_id).await?;
+
+// Configure cleanup options
+let options = CleanupOptions::new()
+    .with_older_than_days(7)   // Expire snapshots older than 7 days
+    .with_retain_last(10);      // Always keep at least 10 most recent
+
+// Option A: Dry run - see what would be expired
+let plan = plan_snapshot_cleanup(&table, &options)?;
+println!("Would remove {} of {} snapshots",
+    plan.snapshots_to_remove.len(), plan.total_snapshots);
+
+for snapshot in &plan.snapshots_to_remove {
+    println!("  Remove: {} ({:.1} days old)", snapshot.snapshot_id, snapshot.age_days);
+}
+
+// Option B: Execute cleanup
+if !plan.snapshots_to_remove.is_empty() {
+    let result = execute_snapshot_cleanup(&table, &catalog, plan).await?;
+    println!("Removed {} snapshots", result.snapshots_removed);
+}
+```
+
 ## INTEGRATION POINTS
 
 - **Async Runtime**: tokio (required for examples/tests, not enforced as dependency)
@@ -463,7 +500,8 @@ When working with this library:
 5. Error pattern: All errors implement Display with context - use `?` operator and let errors propagate
 6. Use predicates for scan filtering: `table.scan().filter(predicate).build()?`
 7. Compaction is available via `compact_table()` or `plan_compaction()` + `execute_compaction()`
-8. CLI is behind the `cli` feature flag (native only)
+8. Snapshot cleanup via `plan_snapshot_cleanup()` + `execute_snapshot_cleanup()`
+9. CLI is behind the `cli` feature flag (native only)
 
 ### Key Invariants to Maintain
 
@@ -481,7 +519,8 @@ When working with this library:
 - Add field IDs to Iceberg schemas (required for Parquet field mapping)
 - Use `parse_filter()` for user-provided filter strings; use `Predicate::*` for programmatic filters
 - Call `plan_compaction()` with `dry_run` first to preview changes before `compact_table()`
-- Use `CompactOptions::with_*()` builder pattern (methods return `Result`)
+- Call `plan_snapshot_cleanup()` first to preview before `execute_snapshot_cleanup()`
+- Use `CompactOptions::with_*()` and `CleanupOptions::with_*()` builder patterns
 
 **Never:**
 - Construct `Table` directly (use catalog methods)
@@ -490,6 +529,7 @@ When working with this library:
 - Assume tables have snapshots (check with `current_snapshot()`)
 - Hardcode credentials in examples (use env vars or function parameters)
 - Run compaction without checking `plan.is_empty()` first
+- Run snapshot cleanup without checking `plan.snapshots_to_remove.is_empty()` first
 - Use CLI features in WASM builds (cli module is `#[cfg(not(target_family = "wasm"))]`)
 
 ## PERFORMANCE PROFILE
@@ -505,8 +545,10 @@ When working with this library:
 | `plan_compaction()` | O(m) | Reads manifests and groups small files |
 | `execute_compaction()` | O(g×f) | Reads/writes g groups × f files per group |
 | `arrow_to_parquet()` | O(n) | Full buffer in memory before upload |
+| `plan_snapshot_cleanup()` | O(s) | Iterates snapshots and refs |
+| `execute_snapshot_cleanup()` | O(1) | Single REST API call to update metadata |
 
-Where m = number of manifest files, n = number of data files, k = files after pruning
+Where m = number of manifest files, n = number of data files, k = files after pruning, s = number of snapshots
 
 ## COMPARISON MATRIX
 
@@ -520,6 +562,7 @@ Where m = number of manifest files, n = number of data files, k = files after pr
 | Transaction API | Simplified (append only) | Full (delete, overwrite, etc.) |
 | Query Optimization | Partition/bounds pruning | Predicate pushdown, projection |
 | Compaction | ✅ Bin-pack | ✅ Multiple strategies |
+| Snapshot Cleanup | ✅ Automatic expiration | ✅ expire_snapshots API |
 | CLI Tool | ✅ icepick binary | ❌ |
 
 **When to use icepick**: WASM deployment, serverless environments (Cloudflare Workers), simpler API for append-only workloads, R2 Data Catalog support, CLI-based table maintenance

@@ -23,6 +23,11 @@
 - **Generic REST Catalog** — Build clients for any Iceberg REST endpoint (Nessie, Glue REST, custom)
 - **Direct S3 Parquet Writes** — Write Arrow data directly to S3 without Iceberg metadata
 
+### Table Maintenance
+- **Bin-pack Compaction** — Merge small files into larger ones for better query performance
+- **Snapshot Cleanup** — Automatically expire old snapshots based on retention policies
+- **Partition Pruning** — Filter scans by partition values and column statistics
+
 ### Developer Experience
 - **Clean API** — Simple factory methods, no complex builders
 - **Type-safe errors** — Comprehensive error handling with context
@@ -242,6 +247,59 @@ This is useful for:
 - Migrating existing Parquet datasets to Iceberg
 - Registering files written by external tools (Spark, DuckDB, etc.)
 - "Write to S3, register later" workflows in serverless environments
+
+## Snapshot Cleanup
+
+Automatically expire old snapshots to reduce metadata overhead and storage costs:
+
+```rust
+use icepick::{R2Catalog, snapshot_cleanup::{plan_snapshot_cleanup, execute_snapshot_cleanup, CleanupOptions}};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let catalog = R2Catalog::new("my-catalog", "account-id", "bucket", "token").await?;
+    let table = catalog.load_table(&"namespace.table".parse()?).await?;
+
+    // Configure retention policy
+    let options = CleanupOptions::new()
+        .with_older_than_days(7)   // Expire snapshots older than 7 days
+        .with_retain_last(10);      // Always keep at least 10 most recent
+
+    // Preview what would be removed
+    let plan = plan_snapshot_cleanup(&table, &options)?;
+    println!("Will remove {} of {} snapshots",
+        plan.snapshots_to_remove.len(), plan.total_snapshots);
+
+    // Execute cleanup
+    if !plan.snapshots_to_remove.is_empty() {
+        let result = execute_snapshot_cleanup(&table, &catalog, plan).await?;
+        println!("Removed {} snapshots", result.snapshots_removed);
+    }
+
+    Ok(())
+}
+```
+
+### CLI Usage
+
+```bash
+# List all snapshots with age and status
+icepick snapshot list my_namespace.my_table
+
+# Preview cleanup (dry run)
+icepick snapshot cleanup my_namespace.my_table --dry-run
+
+# Execute cleanup with custom retention
+icepick snapshot cleanup my_namespace.my_table \
+  --older-than-days 7 \
+  --retain-last 10
+```
+
+Snapshot cleanup respects:
+- **Current snapshot** - Never expired (it's the current table state)
+- **Referenced snapshots** - Never expired if referenced by branches or tags
+- **Retention count** - Keeps the N most recent regardless of age
+- **Age threshold** - Only expires snapshots older than the threshold
 
 ## Examples
 
